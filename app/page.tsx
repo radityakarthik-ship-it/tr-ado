@@ -5,9 +5,23 @@ import Sidebar from "@/components/Sidebar";
 
 export const dynamic = "force-dynamic";
 
+async function loadTickets(): Promise<{
+  tickets: Ticket[];
+  error: string | null;
+}> {
+  try {
+    await seedIfEmpty();
+    const tickets = await listTickets();
+    return { tickets, error: null };
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error("[tr-ado] DB load failed:", message);
+    return { tickets: [], error: message };
+  }
+}
+
 export default async function HomePage() {
-  await seedIfEmpty();
-  const tickets = await listTickets();
+  const { tickets, error } = await loadTickets();
 
   const columns: WorkItemState[] = ["Backlog", "In Progress", "Done"];
   const grouped: Record<WorkItemState, Ticket[]> = {
@@ -38,6 +52,12 @@ export default async function HomePage() {
               <span>Sprint ends 2026-06-26</span>
             </div>
           </div>
+          {error && (
+            <div className="mb-4 rounded border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              <div className="font-semibold mb-1">Storage warming up</div>
+              <div className="text-xs">{error}</div>
+            </div>
+          )}
           <Board columns={columns} grouped={grouped} />
         </main>
       </div>
