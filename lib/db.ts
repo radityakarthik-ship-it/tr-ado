@@ -105,7 +105,46 @@ export async function ensureSchema(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_timesheets_user_date
       ON timesheets (user_name, work_date)
   `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS meta_flags (
+      flag        TEXT PRIMARY KEY,
+      applied_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
   initialized = true;
+}
+
+const STALE_CLOSURES_V1 = [
+  "Login page intermittently returns 500",
+  "Server-side rendering for article preview",
+  "Skip-to-content link not visible on focus",
+  "Login form overflows viewport on iPhone SE (320px)",
+  "Live region missing for async toast notifications",
+  "PDF export drops footnotes in legal briefs",
+  "WYSIWYG toolbar unreachable on iPad in portrait",
+  "Publish-confirmation modal has no focus trap",
+  "Sanctions screening: add UK OFSI list",
+  "PEP match false-positive rate jumped after model refresh",
+  "Risk indicator uses color-only encoding",
+  "Sanctions filter sidebar covers content on mobile",
+  "Migrate batch jobs from cron to Temporal",
+  "Status dashboard uses color-only health indicators",
+  "Incident command console overflows on phones",
+];
+
+async function applyStaleClosuresOnce(): Promise<void> {
+  const sql = getSql();
+  const flag = "stale_closures_v1";
+  const seen = (await sql`SELECT 1 FROM meta_flags WHERE flag = ${flag}`) as unknown[];
+  if (seen.length > 0) return;
+  for (const title of STALE_CLOSURES_V1) {
+    await sql`
+      UPDATE tickets
+         SET state = 'Done', updated_at = NOW()
+       WHERE title = ${title} AND state <> 'Done'
+    `;
+  }
+  await sql`INSERT INTO meta_flags (flag) VALUES (${flag}) ON CONFLICT DO NOTHING`;
 }
 
 export async function listTimesheetEntries(
@@ -271,6 +310,7 @@ export async function seedIfEmpty(): Promise<void> {
   for (const t of missing) {
     await createTicket(t);
   }
+  await applyStaleClosuresOnce();
 }
 
 const SEED_TICKETS: Array<Partial<Ticket>> = [
@@ -474,4 +514,55 @@ const SEED_TICKETS: Array<Partial<Ticket>> = [
   { project: "Infrastructure", type: "Bug", title: "Helm chart values.yaml schema check accepts unknown keys silently", description: "Typo in 'replicaCount' (extra 's') doesn't error; default value silently applied.", assignee: "Anna Kowalski", state: "Backlog", priority: 3, tag: "deploy" },
   { project: "Infrastructure", type: "Bug", title: "On-call rotation calendar shows wrong DST transition on Europe schedule", description: "Schedule library uses Europe/London but applies it to all European rotations. CET rotations off by 1h twice a year.", assignee: "Sharath Krishnan", state: "In Progress", priority: 2, tag: "oncall" },
   { project: "Infrastructure", type: "Bug", title: "Cluster autoscaler over-provisions during graceful shutdown of workload", description: "Pending pods during pod-eviction trigger scale-up that's no longer needed by the time nodes are ready.", assignee: "Priya Menon", state: "Backlog", priority: 3, tag: "k8s" },
+
+  // ---------- Sprint 142 fresh intake ----------
+  // Realtime / WebSocket
+  { project: "Platform", type: "Bug", title: "WebSocket disconnect during rolling deploy not surfaced to client", description: "Sockets drop silently during canary swap. Clients show stale data for up to 60s before reconnecting.", assignee: "Pooja Iyer", state: "Backlog", priority: 1, tag: "realtime" },
+  { project: "Platform", type: "Bug", title: "Realtime presence indicator stays 'online' after browser crash", description: "Heartbeat timeout too generous (90s). Other users see ghost-online indicators for ~1.5 minutes.", assignee: "Sharath Krishnan", state: "Backlog", priority: 3, tag: "realtime" },
+  { project: "Editorial", type: "Bug", title: "Push notifications dropped when editor tab is backgrounded on iOS", description: "Safari throttles WebSocket events; co-author edits don't arrive until tab is foregrounded.", assignee: "Mei Lin", state: "Backlog", priority: 2, tag: "realtime" },
+
+  // OAuth / SSO
+  { project: "Platform", type: "Bug", title: "SSO callback URL strips query parameters causing wrong redirect", description: "Encoded redirect_uri loses its query string when decoded twice. Users land on home page instead of intended target.", assignee: "Priya Menon", state: "Backlog", priority: 1, tag: "sso" },
+  { project: "Platform", type: "Bug", title: "SAML assertion replay protection not enforced", description: "Same assertion can be POSTed within the 5-min window. Missing in-memory nonce tracking. Security review flagged.", assignee: "Devon Walsh", state: "Backlog", priority: 1, tag: "security" },
+  { project: "Platform", type: "Bug", title: "Microsoft Entra ID group claims not refreshed on next login", description: "Group changes upstream take up to 24h to reflect in app. Cache group claims with 15-min TTL.", assignee: "Pooja Iyer", state: "Backlog", priority: 2, tag: "sso" },
+
+  // Webhooks
+  { project: "Platform", type: "Bug", title: "Webhook signature verification accepts deprecated MD5", description: "Verifier accepts MD5 alongside SHA-256. Should reject MD5 outright; document migration window in changelog.", assignee: "Sharath Krishnan", state: "Backlog", priority: 1, tag: "webhooks" },
+  { project: "Infrastructure", type: "Bug", title: "Webhook delivery retries don't preserve original timestamp", description: "Retries send the retry-attempt timestamp instead of the original event time. Downstream consumers see false 'now'.", assignee: "Devon Walsh", state: "Backlog", priority: 2, tag: "webhooks" },
+  { project: "Infrastructure", type: "Bug", title: "Webhook payload schema version not negotiated", description: "Sender always sends v2; v1-only customers crash. Add Accept-Version header negotiation.", assignee: "Sharath Krishnan", state: "Backlog", priority: 2, tag: "webhooks" },
+
+  // Search relevance
+  { project: "Platform", type: "Bug", title: "Search ignores stop-words only for English, not for other locales", description: "French and Spanish search treats 'le', 'la', 'el' as significant tokens. Inflates noise in ranking.", assignee: "Pooja Iyer", state: "Backlog", priority: 3, tag: "search" },
+  { project: "Editorial", type: "Bug", title: "Search ranking demotes recently-updated articles", description: "Boost-by-recency clause has wrong sign. Fresh edits sink to bottom of result list.", assignee: "James O'Connor", state: "Backlog", priority: 2, tag: "search" },
+  { project: "Editorial", type: "Bug", title: "Boolean operators (AND/OR/NOT) silently ignored in search query", description: "Query parser strips operators because they conflict with Lucene reserved chars. Users expect Google-style boolean.", assignee: "Mei Lin", state: "Backlog", priority: 3, tag: "search" },
+
+  // RBAC / Permissions
+  { project: "Platform", type: "Bug", title: "Custom roles allow privilege escalation via team transfer", description: "Transferring a user between teams inherits the union of permissions instead of replacing. Critical security issue.", assignee: "Priya Menon", state: "Backlog", priority: 1, tag: "rbac" },
+  { project: "Compliance", type: "Bug", title: "Role assignment audit log missing 'actor' info", description: "Audit row records who got the role but not who granted it. Required for SOC2 evidence.", assignee: "Anna Kowalski", state: "Backlog", priority: 2, tag: "audit" },
+  { project: "Infrastructure", type: "Bug", title: "Service accounts inherit human-user permissions through OIDC link", description: "Service-account token issued via OIDC pulls user's group memberships. Should use separate scope.", assignee: "Devon Walsh", state: "Backlog", priority: 1, tag: "security" },
+
+  // Background jobs / queues
+  { project: "Infrastructure", type: "Bug", title: "Job queue persists serialized closures that fail to deserialize", description: "Workers crash on jobs enqueued by older binary versions. Need migration to JSON-only payloads.", assignee: "Ravi Subramanian", state: "Backlog", priority: 2, tag: "jobs" },
+  { project: "Infrastructure", type: "Bug", title: "Dead-letter queue grows unbounded with no alerting", description: "DLQ has no max-size or alarm. Past incidents have grown to GBs before discovery.", assignee: "Pooja Iyer", state: "Backlog", priority: 2, tag: "jobs" },
+  { project: "Infrastructure", type: "Bug", title: "Job retry exponential backoff caps at 1s due to int overflow", description: "Backoff calculation overflows after attempt 31. Effectively becomes a tight loop.", assignee: "Sharath Krishnan", state: "Backlog", priority: 2, tag: "jobs" },
+
+  // File storage
+  { project: "Editorial", type: "Bug", title: "S3 multi-part upload doesn't resume after network blip", description: "Frontend restarts the whole upload on any error. Large image uploads (>50MB) routinely fail on flaky wifi.", assignee: "Mei Lin", state: "Backlog", priority: 2, tag: "upload" },
+  { project: "Compliance", type: "Bug", title: "Pre-signed URL TTL ignores forced clock skew", description: "Server clock 20s ahead of S3; pre-signed URLs effectively expire 20s early in test environments.", assignee: "Devon Walsh", state: "Backlog", priority: 3, tag: "storage" },
+  { project: "Editorial", type: "Bug", title: "File download streams 'undefined' as filename on Safari", description: "Content-Disposition header parsing differs across Safari; filename becomes literal 'undefined'.", assignee: "James O'Connor", state: "Backlog", priority: 3, tag: "download" },
+
+  // Caching layer
+  { project: "Platform", type: "Bug", title: "Edge cache key includes session cookie causing miss-storms", description: "Cache-key bucketed per user. Effective hit rate ~3%. Strip session cookies from edge cache key.", assignee: "Pooja Iyer", state: "Backlog", priority: 1, tag: "performance" },
+  { project: "Platform", type: "Bug", title: "Cache invalidation race overwrites fresh data with stale value", description: "Read-through cache races with concurrent writes. Need versioned writes or compare-and-set.", assignee: "Mei Lin", state: "Backlog", priority: 2, tag: "caching" },
+  { project: "Infrastructure", type: "Bug", title: "ETag header dropped behind reverse proxy", description: "Nginx config strips ETag on 304 responses. Defeats client cache validation across the board.", assignee: "Ravi Subramanian", state: "Backlog", priority: 3, tag: "caching" },
+
+  // Browser-specific
+  { project: "Platform", type: "Bug", title: "Safari clears localStorage in private mode without warning", description: "App assumes persistent storage. Saved drafts vanish on tab close in Safari private windows.", assignee: "Sharath Krishnan", state: "Backlog", priority: 3, tag: "browser" },
+  { project: "Editorial", type: "Bug", title: "Firefox 130 strict tracking protection breaks IndexedDB persistence", description: "Editor's local cache is wiped between sessions on Firefox 130+. Affects ~8% of editors.", assignee: "Pooja Iyer", state: "Backlog", priority: 2, tag: "browser" },
+  { project: "Compliance", type: "Bug", title: "PDF preview fails to render in Edge with Acrobat extension installed", description: "Edge prefers Acrobat plug-in over built-in PDF viewer. Our embed fails silently.", assignee: "Anna Kowalski", state: "Backlog", priority: 3, tag: "browser" },
+
+  // Performance
+  { project: "Platform", type: "Bug", title: "N+1 queries on user permission check page", description: "Permission resolution fires per-row query; 200-row page issues 201 DB calls. Add bulk loader.", assignee: "Priya Menon", state: "Backlog", priority: 2, tag: "performance" },
+  { project: "Editorial", type: "Bug", title: "Bundle includes 80kb of unused moment.js after date-fns migration", description: "Tree-shake should have removed moment but a single legacy import in deprecated module pulls it back.", assignee: "Devon Walsh", state: "Backlog", priority: 3, tag: "performance" },
+  { project: "Platform", type: "Bug", title: "LCP regression after font subset change", description: "New font subset removes 'fi' ligature; layout shift after web-font swap pushes LCP element down.", assignee: "Mei Lin", state: "Backlog", priority: 2, tag: "performance" },
 ];
