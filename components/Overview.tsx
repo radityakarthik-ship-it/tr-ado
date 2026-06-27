@@ -27,6 +27,7 @@ const TEAM_BY_PROJECT: Record<ProjectKey, string[]> = {
     "Ravi Subramanian",
     "Pooja Iyer",
     "Sharath Krishnan",
+    "Greeshma JS",
   ],
   Editorial: [
     "James O'Connor",
@@ -35,6 +36,7 @@ const TEAM_BY_PROJECT: Record<ProjectKey, string[]> = {
     "Ravi Subramanian",
     "Pooja Iyer",
     "Sharath Krishnan",
+    "Greeshma JS",
   ],
   Compliance: [
     "Anna Kowalski",
@@ -43,6 +45,7 @@ const TEAM_BY_PROJECT: Record<ProjectKey, string[]> = {
     "Mei Lin",
     "Pooja Iyer",
     "Sharath Krishnan",
+    "Greeshma JS",
   ],
   Infrastructure: [
     "Ravi Subramanian",
@@ -51,6 +54,7 @@ const TEAM_BY_PROJECT: Record<ProjectKey, string[]> = {
     "Anna Kowalski",
     "Pooja Iyer",
     "Sharath Krishnan",
+    "Greeshma JS",
   ],
 };
 

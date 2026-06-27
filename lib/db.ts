@@ -19,6 +19,7 @@ export const PROJECTS: ProjectKey[] = [
 export const TEAM_MEMBERS = [
   "Pooja Iyer",
   "Sharath Krishnan",
+  "Greeshma JS",
   "Priya Menon",
   "Mei Lin",
   "James O'Connor",
