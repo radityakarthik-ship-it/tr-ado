@@ -64,6 +64,7 @@ export default async function TimesheetPage({ searchParams }: Props) {
             </div>
           )}
           <Timesheet
+            key={`${user}-${from}-${entries.length}`}
             initialUser={user}
             initialWeekStart={from}
             initialEntries={entries}

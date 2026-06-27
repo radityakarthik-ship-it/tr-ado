@@ -159,15 +159,21 @@ export default function Timesheet({
   };
 
   const save = async (submitting = false) => {
+    if (submitting && weekTotal <= 0) {
+      setMessage("Enter at least one hour before submitting the week.");
+      return;
+    }
     setSaving(true);
     setMessage(null);
     try {
+      const updatedRows: RowDraft[] = [];
       for (const row of rows) {
+        const newIds: (number | null)[] = [...row.ids];
         for (let i = 0; i < 7; i++) {
           const hours = Number(row.hours[i]) || 0;
           const id = row.ids[i];
           if (id) {
-            await fetch("/api/timesheets", {
+            const res = await fetch("/api/timesheets", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -177,8 +183,12 @@ export default function Timesheet({
                 hours,
               }),
             });
+            if (!res.ok) {
+              const body = await res.text();
+              throw new Error(`Update failed (HTTP ${res.status}): ${body}`);
+            }
           } else if (hours > 0) {
-            await fetch("/api/timesheets", {
+            const res = await fetch("/api/timesheets", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({
@@ -189,11 +199,19 @@ export default function Timesheet({
                 hours,
               }),
             });
+            if (!res.ok) {
+              const body = await res.text();
+              throw new Error(`Create failed (HTTP ${res.status}): ${body}`);
+            }
+            const data = (await res.json()) as { entry?: { id: number } };
+            newIds[i] = data.entry?.id ?? null;
           }
         }
+        updatedRows.push({ ...row, ids: newIds });
       }
+      setRows(updatedRows);
       if (submitting) {
-        await fetch("/api/timesheets", {
+        const res = await fetch("/api/timesheets", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -203,6 +221,10 @@ export default function Timesheet({
             status: "Submitted",
           }),
         });
+        if (!res.ok) {
+          const body = await res.text();
+          throw new Error(`Submit failed (HTTP ${res.status}): ${body}`);
+        }
       }
       setMessage(submitting ? "Week submitted." : "Saved.");
       startTransition(() => router.refresh());
