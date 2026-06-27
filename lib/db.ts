@@ -16,6 +16,31 @@ export const PROJECTS: ProjectKey[] = [
   "Infrastructure",
 ];
 
+export const TEAM_MEMBERS = [
+  "Pooja Iyer",
+  "Sharath Krishnan",
+  "Priya Menon",
+  "Mei Lin",
+  "James O'Connor",
+  "Anna Kowalski",
+  "Devon Walsh",
+  "Ravi Subramanian",
+] as const;
+
+export type TimesheetStatus = "Draft" | "Submitted" | "Approved";
+
+export interface TimesheetEntry {
+  id: number;
+  user_name: string;
+  work_date: string;
+  project: ProjectKey;
+  task: string;
+  hours: number;
+  status: TimesheetStatus;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Ticket {
   id: number;
   project: ProjectKey;
@@ -63,7 +88,105 @@ export async function ensureSchema(): Promise<void> {
     ALTER TABLE tickets
       ADD COLUMN IF NOT EXISTS project TEXT NOT NULL DEFAULT 'Platform'
   `;
+  await sql`
+    CREATE TABLE IF NOT EXISTS timesheets (
+      id          SERIAL PRIMARY KEY,
+      user_name   TEXT NOT NULL,
+      work_date   DATE NOT NULL,
+      project     TEXT NOT NULL DEFAULT 'Platform',
+      task        TEXT NOT NULL DEFAULT '',
+      hours       NUMERIC(4,2) NOT NULL DEFAULT 0,
+      status      TEXT NOT NULL DEFAULT 'Draft',
+      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_timesheets_user_date
+      ON timesheets (user_name, work_date)
+  `;
   initialized = true;
+}
+
+export async function listTimesheetEntries(
+  user: string,
+  fromDate: string,
+  toDate: string,
+): Promise<TimesheetEntry[]> {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = (await sql`
+    SELECT id, user_name, work_date::text AS work_date, project, task, hours,
+           status, created_at, updated_at
+    FROM timesheets
+    WHERE user_name = ${user}
+      AND work_date BETWEEN ${fromDate} AND ${toDate}
+    ORDER BY work_date ASC, id ASC
+  `) as TimesheetEntry[];
+  return rows.map((r) => ({ ...r, hours: Number(r.hours) }));
+}
+
+export async function upsertTimesheetEntry(
+  input: Partial<TimesheetEntry>,
+): Promise<TimesheetEntry> {
+  await ensureSchema();
+  const sql = getSql();
+  if (input.id) {
+    const rows = (await sql`
+      UPDATE timesheets
+         SET project    = COALESCE(${input.project ?? null}, project),
+             task       = COALESCE(${input.task ?? null}, task),
+             hours      = COALESCE(${input.hours ?? null}, hours),
+             status     = COALESCE(${input.status ?? null}, status),
+             updated_at = NOW()
+       WHERE id = ${input.id}
+   RETURNING id, user_name, work_date::text AS work_date, project, task, hours,
+             status, created_at, updated_at
+    `) as TimesheetEntry[];
+    const row = rows[0];
+    return { ...row, hours: Number(row.hours) };
+  }
+  const {
+    user_name = "Pooja Iyer",
+    work_date = new Date().toISOString().slice(0, 10),
+    project = "Platform",
+    task = "",
+    hours = 0,
+    status = "Draft",
+  } = input;
+  const rows = (await sql`
+    INSERT INTO timesheets (user_name, work_date, project, task, hours, status)
+    VALUES (${user_name}, ${work_date}, ${project}, ${task}, ${hours}, ${status})
+    RETURNING id, user_name, work_date::text AS work_date, project, task, hours,
+              status, created_at, updated_at
+  `) as TimesheetEntry[];
+  const row = rows[0];
+  return { ...row, hours: Number(row.hours) };
+}
+
+export async function deleteTimesheetEntry(id: number): Promise<boolean> {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = (await sql`DELETE FROM timesheets WHERE id = ${id} RETURNING id`) as { id: number }[];
+  return rows.length > 0;
+}
+
+export async function setWeekStatus(
+  user: string,
+  fromDate: string,
+  toDate: string,
+  status: TimesheetStatus,
+): Promise<number> {
+  await ensureSchema();
+  const sql = getSql();
+  const rows = (await sql`
+    UPDATE timesheets
+       SET status = ${status}, updated_at = NOW()
+     WHERE user_name = ${user}
+       AND work_date BETWEEN ${fromDate} AND ${toDate}
+ RETURNING id
+  `) as { id: number }[];
+  return rows.length;
 }
 
 export async function listTickets(project?: ProjectKey): Promise<Ticket[]> {

@@ -7,6 +7,7 @@ export type SidebarSection =
   | "repos"
   | "pipelines"
   | "testplans"
+  | "timesheet"
   | "settings";
 
 interface NavItem {
@@ -44,6 +45,12 @@ const nav: NavItem[] = [
     children: ["Pipelines", "Environments", "Releases", "Library"],
   },
   { icon: "✓", label: "Test Plans", section: "testplans" },
+  {
+    icon: "⏱",
+    label: "Timesheet",
+    section: "timesheet",
+    href: () => `/timesheet`,
+  },
   { icon: "⚙", label: "Project settings", section: "settings" },
 ];
 
